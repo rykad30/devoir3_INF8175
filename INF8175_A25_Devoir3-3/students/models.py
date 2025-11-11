@@ -181,7 +181,20 @@ class DigitClassificationModel(object):
 
     def __init__(self) -> None:
         # Initialize your model parameters here
-        "*** TODO: COMPLETE HERE FOR QUESTION 3 ***"
+        hidden_size1 = 128
+        hidden_size2 = 64
+        
+        # Couche 1: 784 entrées -> 128 neurones
+        self.W1 = nn.Parameter(784, hidden_size1)
+        self.b1 = nn.Parameter(1, hidden_size1)
+        
+        # Couche 2: 128 -> 64 neurones
+        self.W2 = nn.Parameter(hidden_size1, hidden_size2)
+        self.b2 = nn.Parameter(1, hidden_size2)
+        
+        # Couche de sortie: 64 -> 10 classes
+        self.W3 = nn.Parameter(hidden_size2, 10)
+        self.b3 = nn.Parameter(1, 10)
 
     def run(self, x: nn.Constant) -> nn.Node:
         """
@@ -197,7 +210,21 @@ class DigitClassificationModel(object):
             A node with shape (batch_size x 10) containing predicted scores
                 (also called logits)
         """
-        "*** TODO: COMPLETE HERE FOR QUESTION 3 ***"
+        # Première couche: Linear + Bias + ReLU
+        hidden1_linear = nn.Linear(x, self.W1)
+        hidden1_with_bias = nn.AddBias(hidden1_linear, self.b1)
+        hidden1_activated = nn.ReLU(hidden1_with_bias)
+        
+        # Deuxième couche: Linear + Bias + ReLU
+        hidden2_linear = nn.Linear(hidden1_activated, self.W2)
+        hidden2_with_bias = nn.AddBias(hidden2_linear, self.b2)
+        hidden2_activated = nn.ReLU(hidden2_with_bias)
+        
+        # Couche de sortie: Linear + Bias (pas d'activation pour les logits)
+        output_linear = nn.Linear(hidden2_activated, self.W3)
+        output = nn.AddBias(output_linear, self.b3)
+        
+        return output
 
     def get_loss(self, x: nn.Constant, y: nn.Constant) -> nn.Node:
         """
@@ -212,10 +239,65 @@ class DigitClassificationModel(object):
             y: a node with shape (batch_size x 10)
         Returns: a loss node
         """
-        "*** TODO: COMPLETE HERE FOR QUESTION 3 ***"
+        logits = self.run(x)
+        return nn.SoftmaxLoss(logits, y)
 
     def train(self, dataset: DigitClassificationDataset) -> None:
         """
         Trains the model.
         """
-        "*** TODO: COMPLETE HERE FOR QUESTION 3 ***"
+        learning_rate = 0.1
+        batch_size = 20
+        num_epochs = 5 # Pas trop haut sinon trop long
+        best_accuracy = 0
+        patience = 3  # Arrêt anticipé si pas d'amélioration après 3 époques
+        patience_counter = 0
+        
+        for epoch in range(num_epochs):
+            total_loss = 0
+            batch_count = 0
+            
+            # Phase d'entraînement
+            for x_batch, y_batch in dataset.iterate_once(batch_size):
+                # Compute loss for this batch
+                loss = self.get_loss(x_batch, y_batch)
+                
+                # Compute gradients with respect to all parameters
+                parameters = [self.W1, self.b1, self.W2, self.b2, self.W3, self.b3]
+                grads = nn.gradients(loss, parameters)
+                
+                # Update parameters using gradient descent
+                for param, grad in zip(parameters, grads):
+                    param.update(grad, -learning_rate)
+                
+                total_loss += nn.as_scalar(loss)
+                batch_count += 1
+            
+            # Calcul de la précision sur l'ensemble de validation
+            validation_accuracy = dataset.get_validation_accuracy()
+            
+            # Affichage des métriques
+            avg_loss = total_loss / batch_count if batch_count > 0 else total_loss
+            print(f"Epoch {epoch}, Loss: {avg_loss:.4f}, Validation Accuracy: {validation_accuracy:.3f}")
+            
+            # Arrêt anticipé basé sur la précision de validation
+            if validation_accuracy > best_accuracy:
+                best_accuracy = validation_accuracy
+                patience_counter = 0
+                print(f"  → New best accuracy: {best_accuracy:.3f}")
+            else:
+                patience_counter += 1
+                print(f"  → No improvement for {patience_counter} epoch(s)")
+                
+            if patience_counter >= patience:
+                print(f"Early stopping at epoch {epoch}")
+                break
+            
+            # Réduction du learning rate si stagnation
+            if patience_counter >= 2:
+                learning_rate *= 0.8
+                print(f"  → Reducing learning rate to {learning_rate:.4f}")
+        
+        # Évaluation finale
+        final_accuracy = dataset.get_validation_accuracy()
+        print(f"Training completed. Final validation accuracy: {final_accuracy:.3f}")
